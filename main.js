@@ -19,8 +19,8 @@ let partition = 1
 function createWindow () {
 	// Create the browser window.
 	let  window = new BrowserWindow({
-		width: 800,
-		height: 600,
+		width: 337,
+		height: 679,
 		webPreferences: {
 			contextIsolation: false,
 			nodeIntegration: false,
@@ -36,16 +36,18 @@ function createWindow () {
 		slashes: true
 	}))
 
-	// Open the DevTools.
-	if(!windows.length)
-		window.webContents.openDevTools()
+	setTimeout(()=>{
+		windows.webContents.send("start")
+	},3000)
+
+	windows.push(window)
 
 	// Emitted when the window is closed.
 	window.on('closed', () => {
 		window = null
+		windows.splice(windows.indexOf(window), 1)
 	})
 
-	windows.push(window)
 }
 
 // This method will be called when Electron has finished
@@ -56,11 +58,6 @@ app.on('ready', ()=>{
 	createWindow()
 	createWindow()
 	createWindow()
-
-	setTimeout(()=>{
-		for(const id in windows)
-			windows[id].webContents.send("start", +id+1)
-	},3000)
 })
 
 // Quit when all windows are closed.
@@ -94,6 +91,10 @@ ipc.on("get-name", (event, uid) => {
 })
 ipc.on("set-name", (event, uid, name) => {
 	names[uid] = name
+})
+
+ipc.on("new-window", () => {
+	createWindow()
 })
 
 ipc.on("end", () => {
