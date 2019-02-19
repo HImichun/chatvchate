@@ -36,9 +36,7 @@ function createWindow () {
 		slashes: true
 	}))
 
-	setTimeout(()=>{
-		windows.webContents.send("start")
-	},3000)
+	setTimeout(()=>windows.webContents.send("start"), 4000)
 
 	windows.push(window)
 
@@ -84,6 +82,17 @@ ipc.on("message", (event, text) => {
 	for(const window of windows)
 		if(window.webContents != event.sender)
 			window.webContents.send("message", text)
+})
+
+ipc.on("get-status", (event) => {
+	let active = 0
+	for(const window of windows)
+		active += window.webContents.isActive
+	event.returnValue = `~В чате ${active} из ${windows.length} человек`
+})
+
+ipc.on("active", (event, isActive) => {
+	event.sender.isActive = isActive
 })
 
 ipc.on("get-name", (event, uid) => {
