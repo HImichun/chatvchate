@@ -45,12 +45,16 @@ ipc.on("start", (event) => {
 			const message = data.message
 			console.log("recieved", message)
 
+			// ~ ignore
+			if(data.message[0] === "~")
+				return
+
 			// command
-			if(data.message[0] === "#") {
+			else if(data.message[0] === "#") {
 				if(data.message === "#help")
-					send("~Комманды:\n\n#status - состояние чата (WIP)\n#name - узнать своё имя\n#me - сообщение от третьего лица")
+					send("~Комманды:\n\n#status - состояние чата\n#name - узнать своё имя\n#me - сообщение от третьего лица")
 				else if(data.message === "#status")
-					send("~Эта команда ещё не реализована")
+					send(ipc.send("get-status"))
 				else if(data.message === "#name" && isNaN(name-0))
 					send(`~Ваше имя - ${name}`)
 				else if(data.message.match(/^#me /) && isNaN(name-0))
@@ -90,6 +94,7 @@ ipc.on("start", (event) => {
 		HandlerMessage["_dialog.opened"](data)
 		name = -1
 		send(`~Вы попали в чат в чате, напишите что-нибудь, чтобы начать.\n\nЧто это?\n- Групповой чат.\n\nЗачем?\n- Я так хочу.\n\nЭто бот?\n- Боты, объединяющие реальных людей.\n\nЕсли что-то не нравится, не тратьте своё время - выходите.`)
+		ipc.send("active", true)
 	}
 	// closed dialog
 	HandlerMessage["_dialog.closed"] = HandlerMessage["\x64\x69\x61\x6C\x6F\x67\x2E\x63\x6C\x6F\x73\x65\x64"]
@@ -97,6 +102,7 @@ ipc.on("start", (event) => {
 		HandlerMessage["_dialog.closed"](data)
 		if(isNaN(name-0))
 			ipc.send("message", `~${name} больше не с нами`)
+		ipc.send("active", false)
 	}
 	console.log("started")
 })
