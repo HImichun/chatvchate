@@ -36,14 +36,14 @@ function createWindow () {
 		slashes: true
 	}))
 
-	setTimeout(()=>windows.webContents.send("start"), 4000)
+	setTimeout(()=>window.webContents.send("start"), 4000)
 
 	windows.push(window)
 
 	// Emitted when the window is closed.
 	window.on('closed', () => {
-		window = null
 		windows.splice(windows.indexOf(window), 1)
+		window = null
 	})
 
 }
@@ -87,22 +87,26 @@ ipc.on("message", (event, text) => {
 ipc.on("get-status", (event) => {
 	let active = 0
 	for(const window of windows)
-		active += window.webContents.isActive
+		if(window.webContents.isActive)
+			active++
 	event.returnValue = `~В чате ${active} из ${windows.length} человек`
 })
 
-ipc.on("active", (event, isActive) => {
-	event.sender.isActive = isActive
+ipc.on("set-status", (event, val) => {
+	if(val)
+		event.sender.isActive = true
+	else
+		event.sender.isActive = false
 })
 
 ipc.on("get-name", (event, uid) => {
-	event.returnValue = names[uid] || 0
+	event.returnValue = names[uid] || null
 })
 ipc.on("set-name", (event, uid, name) => {
 	names[uid] = name
 })
 
-ipc.on("new-window", () => {
+ipc.on("create-window", () => {
 	createWindow()
 })
 

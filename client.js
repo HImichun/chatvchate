@@ -37,6 +37,22 @@ window.end = function(){
 
 ipc.on("start", (event) => {
 	window.name = -1
+	window.userState = -1
+	window.nameEl = document.getElementsByClassName("who_chat")[0]
+
+	if(true){
+		let closeBtn = document.getElementById("closeDialogBtn")
+		closeBtn.style.position = "absolute"
+		closeBtn.style.right = "8px"
+		closeBtn.style.top = "10px"
+
+		let nameLine = document.getElementsByClassName("left_block_hc")[0]
+		nameLine.style.overflow  = "hidden"
+		nameLine.style.width 	 = "100%"
+		nameLine.style.height 	 = "1.1em"
+		nameLine.style.wordBreak = "break-all"
+	}
+
 	// send
 	HandlerMessage["_message.new"] = HandlerMessage["\x6D\x65\x73\x73\x61\x67\x65\x73\x2E\x6E\x65\x77"]
 	HandlerMessage["\x6D\x65\x73\x73\x61\x67\x65\x73\x2E\x6E\x65\x77"] = function (data){
@@ -52,35 +68,60 @@ ipc.on("start", (event) => {
 			// command
 			else if(data.message[0] === "#") {
 				if(data.message === "#help")
-					send("~Комманды:\n\n#status - состояние чата\n#name - узнать своё имя\n#me - сообщение от третьего лица")
+					send("~Команды:\n\n#status - состояние чата\n#name - узнать своё имя\n#me - сообщение от третьего лица")
+
 				else if(data.message === "#status")
-					send(ipc.send("get-status"))
-				else if(data.message === "#name" && isNaN(name-0))
-					send(`~Ваше имя - ${name}`)
-				else if(data.message.match(/^#me /) && isNaN(name-0))
-					emit(`*${name} ${data.message.substring(4)}*`)
+					send(ipc.sendSync("get-status"))
+
+				else if(data.message === "#name") {
+					if(userState == 1)
+						send(`~Ваше имя - ${name}`)
+					else
+						send("~У вас ещё нет имени")
+				}
+
+				else if(data.message.match(/^#me/)) {
+					if(userState == 1) {
+						if(data.message.match(/^#me [\s\S]+/))
+							emit(`*${name} ${data.message.substring(4)}*`)
+						else
+							send(`~Использование: \"#me [сообщение]\"`)
+					}
+					else
+						send("~Вы ещё не в чате")
+				}
+
 				else
 					send("~Такой комманды нет, или она вам не доступна")
 			}
 
 			// name not set
-			else if(name-0 === -1){
-				name = ipc.sendSync("get-name", data.senderId) // sets name to 0 if not found
-				if(name-0 === 0)
+			else if(userState == -1){
+				name = ipc.sendSync("get-name", data.senderId)
+				if(name){
+					userState = 0
 					send(`~Введите ваше имя`)
-				else
+				}
+				else{
+					userState = 1
+					nameEl.innerText = name
+					ipc.send("set-status", true)
 					emit(`~Добро пожаловать, ${name}`)
+				}
 			}
 
 			// name is being set
-			else if(name-0 === 0){
+			else if(userState == 0){
 				name = message
+				nameEl.innerText = name
+				userState = 1
 				ipc.send("set-name", data.senderId, name)
+				ipc.send("set-status", true)
 				emit(`~Добро пожаловать, ${name}`)
 			}
 
 			// normal message
-			else if(isNaN(name-0))
+			else if(userState == 1)
 				ipc.send("message", `[${name}] ${message}`)
 
 			// this shouldn't ever happen
@@ -92,23 +133,23 @@ ipc.on("start", (event) => {
 	HandlerMessage["_dialog.opened"] = HandlerMessage["\x64\x69\x61\x6C\x6F\x67\x2E\x6F\x70\x65\x6E\x65\x64"]
 	HandlerMessage["\x64\x69\x61\x6C\x6F\x67\x2E\x6F\x70\x65\x6E\x65\x64"] = function (data){
 		HandlerMessage["_dialog.opened"](data)
-		name = -1
-		send(`~Вы попали в чат в чате, напишите что-нибудь, чтобы начать.\n\nЧто это?\n- Групповой чат.\n\nЗачем?\n- Я так хочу.\n\nЭто бот?\n- Боты, объединяющие реальных людей.\n\nЕсли что-то не нравится, не тратьте своё время - выходите.`)
-		ipc.send("active", true)
+		userState = -1
+		name = null
+		send(`~Вы попали в чат в чате, напишите что-нибудь, чтобы начать.\n\nЧто это?\n- Групповой чат.\n\nЗачем?\n- Я так хочу.\n\nЭто бот?\n- Боты, объединяющие реальных людей.\n\nЕсли что-то не нравится, не тратьте своё время - выходите.\n\n#help - список команд`)
 	}
 	// closed dialog
 	HandlerMessage["_dialog.closed"] = HandlerMessage["\x64\x69\x61\x6C\x6F\x67\x2E\x63\x6C\x6F\x73\x65\x64"]
 	HandlerMessage["\x64\x69\x61\x6C\x6F\x67\x2E\x63\x6C\x6F\x73\x65\x64"] = function (data){
 		HandlerMessage["_dialog.closed"](data)
-		if(isNaN(name-0))
+		if(userState == 1)
 			ipc.send("message", `~${name} больше не с нами`)
-		ipc.send("active", false)
+		ipc.send("set-status", false)
 	}
 	console.log("started")
 })
 
 ipc.on("message", (event,text) => {
-	if(isNaN(name-0))
+	if(userState == 1)
 		send(text)
 })
 
