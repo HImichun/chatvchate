@@ -15,16 +15,24 @@ window.send = function(text){
 		chat_request_id++
 	}
 
+	scrollToLastMessage()
 	console.log("sent", text)
 }
 
 window.s = function(text) {
-	emit("\<oh\> " + text)
+	if(userState > 0)
+		emit("\<oh\> " + text)
+	else
+		broadcast("\<oh\> " + text)
+}
+
+window.broadcast = function(text) {
+	ipc.send("message", text)
 }
 
 window.emit = function(text) {
 	send(text)
-	ipc.send("message", text)
+	broadcast(text)
 }
 
 window.create = function(){
@@ -35,10 +43,19 @@ window.end = function(){
 	ipc.send("end")
 }
 
-ipc.on("start", (event) => {
-	window.name = -1
-	window.userState = -1
+// ipc.on("start", (event) => {
+function start(){
+	window.onbeforeunload = ()=>{}
 	window.nameEl = document.getElementsByClassName("who_chat")[0]
+
+	window.name = -1
+	window.role = ""
+	window.userState = -1
+	window.warns = 0
+
+	window.lastMessageTime = new Date().getTime()
+	window.lastMessage = ""
+
 
 	if(true){
 		let closeBtn = document.getElementById("closeDialogBtn")
@@ -58,39 +75,82 @@ ipc.on("start", (event) => {
 	HandlerMessage["\x6D\x65\x73\x73\x61\x67\x65\x73\x2E\x6E\x65\x77"] = function (data){
 		HandlerMessage["_message.new"](data)
 		if(data.senderId != user_id){
-			const message = data.message
+			let message = data.message
+			const messageTime = new Date().getTime()
+			const oldWarns = warns
 			console.log("recieved", message)
 
+
+			// spam prevention
+			if(messageTime - lastMessageTime < 1000){
+				warns++
+				send("~Сообщение не отправлено: вы слишком часто пишете сообщения")
+			}
+			if(message == lastMessage){
+				warns++
+				send("~Сообщение не отправлено: ваши сообщения повторяются")
+			}
+
+			if(warns > oldWarns) {
+				if(warns > 6)
+					ChatEngine.leaveDialog(current_dialog)
+				else
+					send("~Осторожней")
+				return
+			}
+
+			lastMessageTime = messageTime
+			lastMessage = message
+
 			// ~ ignore
-			if(data.message[0] === "~")
+			if(message[0] === "~")
 				return
 
-			// command
-			else if(data.message[0] === "#") {
-				if(data.message === "#help")
-					send("~Команды:\n\n#status - состояние чата\n#name - узнать своё имя\n#me - сообщение от третьего лица")
-
-				else if(data.message === "#status")
+			// commands
+			else if(message[0] === "#") {
+				if(message === "#help"){
+					let text = "~Команды:\n\n#status - состояние чата\n#name - узнать своё имя\n#me [сообщение] - сообщение от третьего лица"
+					if(role == "moderator")
+						text += "\n#ids - получить id чатовцев\n#kick [id] - кикнуть человека с данным id"
+					send(text)
+				}
+				//
+				else if(message === "#status")
 					send(ipc.sendSync("get-status"))
-
-				else if(data.message === "#name") {
+				//
+				else if(message === "#name") {
 					if(userState == 1)
 						send(`~Ваше имя - ${name}`)
 					else
 						send("~У вас ещё нет имени")
 				}
-
-				else if(data.message.match(/^#me/)) {
+				//
+				else if(message.match(/^#me/)) {
 					if(userState == 1) {
-						if(data.message.match(/^#me [\s\S]+/))
-							emit(`*${name} ${data.message.substring(4)}*`)
+						if(message.match(/^#me [\s\S]+/))
+							emit(`*${name} ${message.substring(4)}*`)
 						else
 							send(`~Использование: \"#me [сообщение]\"`)
 					}
 					else
 						send("~Вы ещё не в чате")
 				}
-
+				//
+				else if(message == "#ids" && role == "moderator") {
+					let text = "id | name"
+					const users = ipc.sendSync("get-users")
+					for(const {id, name} of users)
+						text += `\n${id} | ${name}`
+					send(text)
+				}
+				//
+				else if(message.match(/^#kick/) && role == "moderator") {
+					if(message.match(/^#kick [\d]+/))
+						ipc.send("kick", message.substring(4))
+					else
+						send(`~Использование: \"#kick [id]\"`)
+				}
+				//
 				else
 					send("~Такой комманды нет, или она вам не доступна")
 			}
@@ -105,7 +165,7 @@ ipc.on("start", (event) => {
 				else{
 					userState = 1
 					nameEl.innerText = name
-					ipc.send("set-status", true)
+					ipc.send("set-status", true, name)
 					emit(`~Добро пожаловать, ${name}`)
 				}
 			}
@@ -116,13 +176,16 @@ ipc.on("start", (event) => {
 				nameEl.innerText = name
 				userState = 1
 				ipc.send("set-name", data.senderId, name)
-				ipc.send("set-status", true)
+				ipc.send("set-status", true, name)
 				emit(`~Добро пожаловать, ${name}`)
 			}
 
 			// normal message
-			else if(userState == 1)
-				ipc.send("message", `[${name}] ${message}`)
+			else if(userState == 1){
+				if(warns > 0)
+					warns -= 0.1
+				broadcast(`[${name}] ${message}`)
+			}
 
 			// this shouldn't ever happen
 			else
@@ -135,50 +198,44 @@ ipc.on("start", (event) => {
 		HandlerMessage["_dialog.opened"](data)
 		userState = -1
 		name = null
-		send(`~Вы попали в чат в чате, напишите что-нибудь (не команду), чтобы начать.\n\nЧто это?\n- Групповой чат.\n\nЗачем?\n- Я так хочу.\n\nЭто бот?\n- Боты, объединяющие реальных людей.\n\nЕсли что-то не нравится, не тратьте своё время - выходите.\n\n#help - список команд`)
+		warns = 0
+		lastMessage = ""
+		send(`~Вы попали в чат в чате, напишите что-нибудь (НЕ КОМАНДУ), чтобы начать.\n\nЧто это?\n- Групповой чат.\n\nЗачем?\n- Я так хочу.\n\nЭто бот?\n- Боты, объединяющие реальных людей.\n\nЕсли что-то не нравится, не тратьте своё время - выходите.\n\n#help - список команд`)
 	}
 	// closed dialog
 	HandlerMessage["_dialog.closed"] = HandlerMessage["\x64\x69\x61\x6C\x6F\x67\x2E\x63\x6C\x6F\x73\x65\x64"]
 	HandlerMessage["\x64\x69\x61\x6C\x6F\x67\x2E\x63\x6C\x6F\x73\x65\x64"] = function (data){
 		HandlerMessage["_dialog.closed"](data)
 		if(userState == 1)
-			ipc.send("message", `~${name} больше не с нами`)
-		ipc.send("set-status", false)
+			broadcast(`~${name} больше не с нами`)
+		ipc.send("set-status", false, "")
+
+		if(role){
+			()=>{
+				let i = 0
+				const interval = setInterval(()=>{
+					playSound()
+					if(i++ >= 5)
+						clearInterval(interval)
+				}, 600)
+			}
+			role = ""
+		}
+		ChatEngine.searchCompany({wishSex: null})
 	}
 	console.log("started")
-})
+}
+// })
 
-ipc.on("message", (event,text) => {
+ipc.on("message", (_,text) => {
 	if(userState == 1)
 		send(text)
 })
 
-console.log(window)
+ipc.on("kick", () => {
+	ChatEngine.leaveDialog(current_dialog)
+})
 
 
 
-
-
-
-
-// postData("http://localhost:3000", {hmm: "hmmm"})
-//   .then(data => console.log(JSON.stringify(data)))
-//   .catch(error => console.error(error));
-
-function postData(url = "", data = {}) {
-// Default options are marked with *
-	return fetch(url, {
-		method: "POST", // *GET, POST, PUT, DELETE, etc.
-		mode: "no-cors", // no-cors, cors, *same-origin
-		cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
-		credentials: "same-origin", // include, *same-origin, omit
-		headers: {
-			"Content-Type": "application/json; charset=utf-8",
-			// "Content-Type": "application/x-www-form-urlencoded",
-		},
-		redirect: "follow", // manual, *follow, error
-		referrer: "no-referrer", // no-referrer, *client
-		body: JSON.stringify(data), // body data type must match "Content-Type" header
-	})
-	.then(response => response.json()) // parses response to JSON
-}
+setTimeout(start, 5000)
