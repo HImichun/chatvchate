@@ -78,10 +78,16 @@ app.on('activate', function () {
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.
 
-ipc.on("message", (event, text) => {
-	for(const window of windows)
-		if(window.webContents != event.sender)
-			window.webContents.send("message", text)
+ipc.on("message", (event, text, name) => {
+	for(const id in windows){
+		const window = windows[id]
+		if(window.webContents != event.sender){
+			if(name)
+				window.webContents.send("message", text, name, id)
+			else
+				window.webContents.send("message", text)
+		}
+	}
 })
 
 ipc.on("get-status", (event) => {

@@ -19,21 +19,28 @@ window.send = function(text){
 	console.log("sent", text)
 }
 
+// admin message
 window.s = function(text) {
 	if(userState > 0)
-		emit("\<oh\> " + text)
+		toAll("\<oh\> " + text)
 	else
-		broadcast("\<oh\> " + text)
+		toOthers("\<oh\> " + text)
 }
 
-window.broadcast = function(text) {
+// user message
+window.sendMessage = function(text) {
+	ipc.send("message", text, name)
+}
+
+window.toAll = function(text) {
+	send(text)
+	toOthers(text)
+}
+
+window.toOthers = function(text) {
 	ipc.send("message", text)
 }
 
-window.emit = function(text) {
-	send(text)
-	broadcast(text)
-}
 
 window.create = function(){
 	ipc.send("create-window")
@@ -43,12 +50,14 @@ window.end = function(){
 	ipc.send("end")
 }
 
+const FIRST_MESSAGE = `~Вы попали в чат в чате, напишите что-нибудь (НЕ КОМАНДУ), чтобы начать.\n\nЧто это?\n- Групповой чат.\n\nЗачем?\n- Я так хочу.\n\nЭто бот?\n- Боты, объединяющие реальных людей.\n\nЕсли что-то не нравится, не тратьте своё время - выходите.\n\n#help - список команд`
+
 // ipc.on("start", (event) => {
 function start(){
 	window.onbeforeunload = ()=>{}
 	window.nameEl = document.getElementsByClassName("who_chat")[0]
 
-	window.name = -1
+	window.name = null
 	window.role = ""
 	window.userState = -1
 	window.warns = 0
@@ -80,6 +89,11 @@ function start(){
 			const oldWarns = warns
 			console.log("recieved", message)
 
+			// drop sibling
+			if(message == FIRST_MESSAGE){
+				ChatEngine.leaveDialog(current_dialog)
+				return
+			}
 
 			// spam prevention
 			if(messageTime - lastMessageTime < 1000){
@@ -115,8 +129,17 @@ function start(){
 					send(text)
 				}
 				//
-				else if(message === "#status")
-					send(ipc.sendSync("get-status"))
+				else if(message === "#status"){
+					if(userState == 1){
+						const text = "~Сейчас в чате:"
+						const users = ipc.sendSync("get-users")
+						for(const {name} of users)
+							text += `\n[${name}]`
+						send(text)
+					}
+					else
+						send(ipc.sendSync("get-status"))
+				}
 				//
 				else if(message === "#name") {
 					if(userState == 1)
@@ -128,7 +151,7 @@ function start(){
 				else if(message.match(/^#me/)) {
 					if(userState == 1) {
 						if(message.match(/^#me [\s\S]+/))
-							emit(`*${name} ${message.substring(4)}*`)
+							toAll(`*${name} ${message.substring(4)}*`)
 						else
 							send(`~Использование: \"#me [сообщение]\"`)
 					}
@@ -146,7 +169,7 @@ function start(){
 				//
 				else if(message.match(/^#kick/) && role == "moderator") {
 					if(message.match(/^#kick [\d]+/))
-						ipc.send("kick", message.substring(4))
+						ipc.send("kick", message.substring(6))
 					else
 						send(`~Использование: \"#kick [id]\"`)
 				}
@@ -166,7 +189,7 @@ function start(){
 					userState = 1
 					nameEl.innerText = name
 					ipc.send("set-status", true, name)
-					emit(`~Добро пожаловать, ${name}`)
+					toAll(`~Добро пожаловать, ${name}`)
 				}
 			}
 
@@ -177,14 +200,14 @@ function start(){
 				userState = 1
 				ipc.send("set-name", data.senderId, name)
 				ipc.send("set-status", true, name)
-				emit(`~Добро пожаловать, ${name}`)
+				toAll(`~Добро пожаловать, ${name}`)
 			}
 
 			// normal message
 			else if(userState == 1){
 				if(warns > 0)
 					warns -= 0.1
-				broadcast(`[${name}] ${message}`)
+				sendMessage(message)
 			}
 
 			// this shouldn't ever happen
@@ -200,14 +223,14 @@ function start(){
 		name = null
 		warns = 0
 		lastMessage = ""
-		send(`~Вы попали в чат в чате, напишите что-нибудь (НЕ КОМАНДУ), чтобы начать.\n\nЧто это?\n- Групповой чат.\n\nЗачем?\n- Я так хочу.\n\nЭто бот?\n- Боты, объединяющие реальных людей.\n\nЕсли что-то не нравится, не тратьте своё время - выходите.\n\n#help - список команд`)
+		send(FIRST_MESSAGE)
 	}
 	// closed dialog
 	HandlerMessage["_dialog.closed"] = HandlerMessage["\x64\x69\x61\x6C\x6F\x67\x2E\x63\x6C\x6F\x73\x65\x64"]
 	HandlerMessage["\x64\x69\x61\x6C\x6F\x67\x2E\x63\x6C\x6F\x73\x65\x64"] = function (data){
 		HandlerMessage["_dialog.closed"](data)
 		if(userState == 1)
-			broadcast(`~${name} больше не с нами`)
+			toOthers(`~${name} больше не с нами`)
 		ipc.send("set-status", false, "")
 
 		if(role){
@@ -227,9 +250,17 @@ function start(){
 }
 // })
 
-ipc.on("message", (_,text) => {
-	if(userState == 1)
-		send(text)
+ipc.on("message", (_, text, name, id) => {
+	if(userState == 1){
+		if(name && id){
+			if(role == "moderator")
+				send(`[${name} | ${id}] ${text}`)
+			else
+				send(`[${name}] ${text}`)
+		}
+		else
+			send(text)
+	}
 })
 
 ipc.on("kick", () => {
