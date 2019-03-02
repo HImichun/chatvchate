@@ -19,8 +19,8 @@ let partition = 1
 function createWindow () {
 	// Create the browser window.
 	let  window = new BrowserWindow({
-		width: 337,
-		height: 679,
+		width: 320,
+		height: 679+25,
 		webPreferences: {
 			contextIsolation: false,
 			nodeIntegration: false,
@@ -36,7 +36,7 @@ function createWindow () {
 		slashes: true
 	}))
 
-	setTimeout(()=>window.webContents.send("start"), 4000)
+	// setTimeout(()=>window.webContents.send("start"), 4000)
 
 	windows.push(window)
 
@@ -92,11 +92,23 @@ ipc.on("get-status", (event) => {
 	event.returnValue = `~В чате ${active} из ${windows.length} человек`
 })
 
-ipc.on("set-status", (event, val) => {
-	if(val)
-		event.sender.isActive = true
-	else
-		event.sender.isActive = false
+ipc.on("set-status", (event, isActive, name) => {
+	event.sender.isActive = isActive
+	event.sender.name = name
+})
+
+ipc.on("get-users", event => {
+	const users = []
+	for(const id in windows){
+		if(windows[id].webContents.isActive)
+			users.push({id, name: windows[id].webContents.name})
+	}
+	event.returnValue = users
+})
+
+ipc.on("kick", (event, id) => {
+	if(windows[id])
+		windows[id].webContents.send("kick")
 })
 
 ipc.on("get-name", (event, uid) => {
