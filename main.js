@@ -1,18 +1,17 @@
+// import electron
 const electron = require('electron')
 const ipc = electron.ipcMain
 const session = electron.session
-// Module to control application life.
 const app = electron.app
-// Module to create native browser window.
 const BrowserWindow = electron.BrowserWindow
 
+// constants
 const path = require('path')
 const url = require('url')
 
+//
 const names = []
-
-// Keep a global reference of the window object, if you don't, the window will
-// be closed automatically when the JavaScript object is garbage collected.
+const bannedIds = []
 let windows = []
 let partition = 1
 
@@ -36,16 +35,16 @@ function createWindow () {
 		slashes: true
 	}))
 
-	// setTimeout(()=>window.webContents.send("start"), 4000)
-
-	windows.push(window)
-
 	// Emitted when the window is closed.
 	window.on('closed', () => {
 		windows.splice(windows.indexOf(window), 1)
 		window = null
+		for(const i in windows)
+			windows[i].webContents.wId = i
 	})
 
+	// add to windows list
+	window.webContents.wId = windows.push(window) - 1 // .push returns the new length
 }
 
 // This method will be called when Electron has finished
@@ -60,75 +59,112 @@ app.on('ready', ()=>{
 
 // Quit when all windows are closed.
 app.on('window-all-closed', function () {
-	// On OS X it is common for applications and their menu bar
-	// to stay active until the user quits explicitly with Cmd + Q
-	if (process.platform !== 'darwin') {
-		app.quit()
-	}
+	app.quit()
 })
 
-app.on('activate', function () {
-	// On OS X it's common to re-create a window in the app when the
-	// dock icon is clicked and there are no other windows open.
-	if (windows[0] === null) {
-		createWindow()
-	}
-})
 
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
+// const server = require("./server")
 
-ipc.on("message", (event, text, name) => {
-	for(const id in windows){
-		const window = windows[id]
+function addListener(type, func) {
+	ipc.on(type, func)
+}
+
+// messages
+addListener("message", (event, text, name, role) => {
+	let id
+	if (role == "moderator")
+		id = "m"
+	else
+		id = event.sender.wId
+
+	for(const window of windows){
 		if(window.webContents != event.sender){
 			if(name)
-				window.webContents.send("message", text, name, id)
+				window.webContents.send("message", text, name, role, id)
 			else
 				window.webContents.send("message", text)
 		}
 	}
 })
 
-ipc.on("get-status", (event) => {
-	let active = 0
-	for(const window of windows)
-		if(window.webContents.isActive)
-			active++
-	event.returnValue = `~В чате ${active} из ${windows.length} человек`
+addListener("set-status", (event, {isActive, uid, name, role}) => {
+	if(isActive !== undefined)
+		event.sender.isActive = isActive
+	if(uid !== undefined)
+		event.sender.uid = uid
+	if(name !== undefined)
+		event.sender.name = name
+	if(uid !== undefined && name !== undefined)
+		names[uid] = name
+	if(role !== undefined)
+		event.sender.role = role
 })
 
-ipc.on("set-status", (event, isActive, name) => {
-	event.sender.isActive = isActive
-	event.sender.name = name
-})
-
-ipc.on("get-users", event => {
+addListener("get-users", event => {
 	const users = []
-	for(const id in windows){
-		if(windows[id].webContents.isActive)
-			users.push({id, name: windows[id].webContents.name})
+	for(const i in windows){
+		const wc = windows[i].webContents
+		if(!wc.isActive) continue
+
+		const id = wc.role == "moderator"
+			? "m"
+			: i
+		users.push({id, name: wc.name})
 	}
-	event.returnValue = users
+	event.returnValue = {slots: windows.length, users}
 })
 
-ipc.on("kick", (event, id) => {
-	if(windows[id])
-		windows[id].webContents.send("kick")
+simpleCommand("mute")
+simpleCommand("unmute")
+simpleCommand("kick")
+function simpleCommand(command){
+	addListener(command, (event, affectedIds) => {
+		for(const affectedId of affectedIds)
+			if(windows[affectedId])
+				windows[affectedId].webContents.send(command)
+	})
+}
+
+addListener("ban", (event, ids) => {
+	for(const id of ids)
+		if(windows[id]){
+			bannedIds.push(windows[id].webContents.uid)
+			windows[id].webContents.send("kick")
+		}
+})
+addListener("is-banned", (event, uid) => {
+	event.returnValue = bannedIds.includes(uid)
 })
 
-ipc.on("get-name", (event, uid) => {
-	event.returnValue = names[uid] || null
+addListener("is-name-used", (event, name) => {
+	const reg = /[^A-zА-я]/g
+	for(const {webContents: wc} of windows)
+		if(wc.isActive && wc.name
+			&& wc != event.sender
+			&& wc.name.replace(reg, "").toLowerCase() == name.replace(reg, "").toLowerCase()
+		){
+			event.returnValue = true
+			return
+		}
+	event.returnValue = ""
 })
-ipc.on("set-name", (event, uid, name) => {
+addListener("get-name", (event, uid) => {
+	event.returnValue = names[uid] || ""
+})
+addListener("rename", (event, id, name) => {
+	const window = windows[id]
+	const uid = window.webContents.uid
+
 	names[uid] = name
+	window.webContents.name = name
+	window.webContents.send("rename", name)
 })
 
-ipc.on("create-window", () => {
+addListener("create-window", () => {
 	createWindow()
 })
 
-ipc.on("end", () => {
+addListener("end", () => {
 	for(const window of windows)
 		window.destroy()
 })
