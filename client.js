@@ -393,7 +393,7 @@ function start(){
 	log("started")
 }
 
-window.resetAfkTimer() = function(){
+window.resetAfkTimer = function(){
 	if(afkTimer)
 		clearTimeout(afkTimer)
 	afkTimer = setTimeout(function(){
