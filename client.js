@@ -79,7 +79,7 @@ const RULES = `~Правила:
 2. Не спамить/флудить
 3. Ничего не рекламировать
 4. Не пошлить/интимить
-5. Вы не можете молчать дольше 5-и минут`
+5. Вы не можете молчать дольше 10-и минут`
 
 const HELP_BASE = `~Команды:
 #rules - правила
@@ -241,8 +241,10 @@ function start(){
 
 			else if(command == "me") {
 				if(rejectNotInChat()) return
-				if(argsText)
+				if(argsText){
+					resetAfkTimer()
 					toAll(`*${name} ${argsText}*`)
+				}
 				else
 					send(`~Использование: \"#me сообщение\"`)
 			}
@@ -398,7 +400,7 @@ window.resetAfkTimer() = function(){
 		afkTimer = null
 		if(role != "moderator")
 			ChatEngine.leaveDialog(current_dialog)
-	}, 300000)
+	}, 600000)
 }
 
 window.rejectNotInChat = function(){
@@ -453,7 +455,7 @@ window.changeName = (newName) => {
 
 ipc.on("message", (_, text, name, role, id) => {
 	if(userState == 1){
-		if(name && id){
+		if(name && id !== undefined){
 			const prefix = role == "moderator" ? "☆" : ""
 			if(window.role == "moderator")
 				send(`${prefix}[${name} | ${id}] ${text}`)
@@ -471,9 +473,11 @@ ipc.on("rename", (event, newName) => {
 
 ipc.on("mute", () => {
 	mute = true
+	send("~Вы замьючены и не можете отправлять сообщения")
 })
 ipc.on("unmute", () => {
 	mute = false
+	send("~Вы размьючены и снова можете отправлять сообщения")
 })
 ipc.on("kick", () => {
 	ChatEngine.leaveDialog(current_dialog)
