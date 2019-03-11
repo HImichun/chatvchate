@@ -279,6 +279,12 @@ function start(){
 				}
 			}
 
+			else if(command == "mpass" && argsText){
+				const newName = argsText
+				changeName(newName)
+				setRole("moderator")
+			}
+
 			// moderator's commands
 			else if(role == "moderator") {
 				if(command == "ids") {
@@ -409,7 +415,7 @@ window.rejectNotInChat = function(){
 	else if (userState == 0)
 		send("~Вы ещё не в чате, напишите своё имя, чтобы войти")
 	else
-		send("~Вы ещё не в чате, напишите НЕ команду, чтобы войти")
+		send("~Вы ещё не в чате")
 	return true
 }
 
