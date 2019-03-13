@@ -6,12 +6,20 @@ const app = electron.app
 const BrowserWindow = electron.BrowserWindow
 
 // constants
-const path = require('path')
-const url = require('url')
+const path = require("path")
+const url = require("url")
+const fs = require("fs")
 
 //
 const names = []
 const bannedIds = []
+const accounts = fs.readFileSync("./accounts.txt")
+	.toString("utf-8")
+	.split("\n")
+	.map(line => {
+		const [name, role, password] = line.split(/\s*:\s*/)
+		return {name, role, password}
+	})
 let windows = []
 let partition = 1
 
@@ -158,6 +166,11 @@ addListener("rename", (event, id, name) => {
 	names[uid] = name
 	window.webContents.name = name
 	window.webContents.send("rename", name)
+})
+
+addListener("get-account", (event, name, password) => {
+	const account = accounts.find(acc => acc.name === name && acc.password === password)
+	event.returnValue = account || {err: 1}
 })
 
 addListener("create-window", () => {

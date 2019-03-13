@@ -200,12 +200,17 @@ function start(){
 
 			// base commands
 			if(command == "help"){
-				readHelp = true
 				if(args.length == 0){
 					let text = HELP_BASE
 					if(role == "moderator")
 						text += HELP_MODERATOR
 					send(text)
+
+					if(!readHelp && readRules){
+						send("~Следующим сообщением отправьте имя, которое хотите использовать в чате")
+						userState = 0
+					}
+					readHelp = true
 				}
 				else if(args[0] == "d")
 					send("~Команда #d число_сторон:\nбросить кубик с указанным числом сторон;\nможно бросить несколько кубиков, если разделить пробелами их стороны;\nесли не указывать стороны, то будет брошен один кубик с 6 сторонами")
@@ -214,8 +219,12 @@ function start(){
 			}
 
 			else if(command == "rules"){
-				readRules = true
 				send(RULES)
+				if(!readRules && readHelp){
+					send("~Следующим сообщением отправьте имя, которое хотите использовать в чате")
+					userState = 0
+				}
+				readRules = true
 			}
 
 			else if(command == "status"){
@@ -279,10 +288,15 @@ function start(){
 				}
 			}
 
-			else if(command == "mpass" && argsText){
-				const newName = argsText
-				changeName(newName)
-				setRole("moderator")
+			else if(command == "log" && argsText){
+				const [newName, password] = argsText.split(/\s*:\s*/)
+				const {role, err} = ipc.sendSync("get-account", newName, password)
+				if(err)
+					send("~Аккаунт с такими данными не найден")
+				else {
+					changeName(newName)
+					setRole(role)
+				}
 			}
 
 			// moderator's commands
@@ -324,7 +338,7 @@ function start(){
 				send("~Введите ваше имя")
 			}
 			else
-				send("~Сначала ознакомьтесь c правилами (#rules) и списком команд (#help)")
+				send("~Сначала ознакомьтесь c правилами и списком команд.\nДля этого используйте команды #rules и #help")
 		}
 
 		// name is being set
@@ -335,7 +349,7 @@ function start(){
 
 		// mute
 		else if(mute){
-			send("~Вы не можете писать сообщения")
+			send("~Вы замьючены и не можете отправлять сообщения")
 		}
 
 		// normal message
@@ -413,9 +427,9 @@ window.rejectNotInChat = function(){
 	if (userState == 1)
 		return false
 	else if (userState == 0)
-		send("~Вы ещё не в чате, напишите своё имя, чтобы войти")
+		send("~Вы ещё не в чате, отправьте своё имя, чтобы войти")
 	else
-		send("~Вы ещё не в чате")
+		send("~Вы ещё не в чате\nСначала ознакомьтесь c правилами и списком команд.\nДля этого используйте команды #rules и #help")
 	return true
 }
 
@@ -434,8 +448,8 @@ window.changeName = (newName) => {
 	if(ipc.sendSync("is-name-used", newName))
 		errors.push("Имя уже используется.")
 
-	if((/[☆\[\]\<\>]/).test(newName))
-		errors.push("Вы не можете импользовать в имени следующие символы: ☆[]<>")
+	if((/[☆\[\]\<\>:]/).test(newName))
+		errors.push("Вы не можете импользовать в имени следующие символы: ☆[]<>:")
 
 	if(errors.length){
 		send("~Ошибка:\n"+errors.join("\n"))
@@ -462,7 +476,12 @@ window.changeName = (newName) => {
 ipc.on("message", (_, text, name, role, id) => {
 	if(userState == 1){
 		if(name && id !== undefined){
-			const prefix = role == "moderator" ? "☆" : ""
+			let prefix// = role == "moderator" ? "☆" : ""
+			switch (role) {
+				case "moderator": prefix = "☆"; break;
+				case "heart"    : prefix = "♡"; break;
+				default: prefix = ""
+			}
 			if(window.role == "moderator")
 				send(`${prefix}[${name} | ${id}] ${text}`)
 			else
