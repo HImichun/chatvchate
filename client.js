@@ -96,6 +96,16 @@ const HELP_MODERATOR = `\n\n~Команды модератора:
 #ban id - забанить чатовца с данным id
 \nВ коммандах kick и ban можно указывать несколько id, разделяя их пробелами`
 
+window.COMMON_SETTINGS = {
+	wishSex: null
+}
+window.RARE_SETTINGS = {
+	mySex: "F",
+	myAge: [26, 35],
+	wishSex: "F",
+	wishAge: [[26, 35]]
+}
+
 
 function start(){
 	window.onbeforeunload = ()=>{}
@@ -108,6 +118,8 @@ function start(){
 
 	window.nameEl = document.getElementsByClassName("who_chat")[0]
 	window.chatBlockEl = document.getElementsByClassName("window_chat_block")[0]
+
+	window.settings = COMMON_SETTINGS
 
 	window.userState = -1
 	window.userId = 0
@@ -408,7 +420,7 @@ function start(){
 			name: "",
 			role: ""
 		})
-		ChatEngine.searchCompany({wishSex: null})
+		ChatEngine.searchCompany(settings)
 	}
 	log("started")
 }
