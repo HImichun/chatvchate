@@ -134,6 +134,8 @@ function simpleCommand(command){
 }
 
 addListener("ban", (event, ids) => {
+	if(ids == "self")
+		ids = [event.sender.wId]
 	for(const id of ids)
 		if(windows[id]){
 			bannedIds.push(windows[id].webContents.uid)

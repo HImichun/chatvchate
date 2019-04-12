@@ -58,6 +58,23 @@ window.end = function(){
 	ipc.send("end")
 }
 
+window.maxMessage = function(){
+	if(rep <= 0)
+		return 50
+	return 50 + rep*10
+}
+
+window.minPeriod = function(){
+	if(rep <= 0)
+		return 5000
+	return (-0.16*rep + 5) * 1000
+}
+
+window.addRep = function(){
+	if(rep < 25)
+		rep++
+}
+
 const FIRST_MESSAGE = `~Вы попали в чат в чате, прочитайте правила и список команд, чтобы начать.
 \nЧто это?
 - Групповой чат.
@@ -79,7 +96,13 @@ const RULES = `~Правила:
 2. Не спамить/флудить
 3. Ничего не рекламировать
 4. Не пошлить/интимить
-5. Вы не можете молчать дольше 10-и минут`
+5. Вы не можете молчать дольше 10-и минут
+
+~Ограничения:
+Длина сообщений изначально ограничена до 50 символов и с каждым сообщением будет расти на 10 (предел - 300).
+Время между сообщениями подобным образом начинается с 5 секунд и опускается до 1.
+
+За нарушение правил вы можете быть кикнуты или забанены.`
 
 const HELP_BASE = `~Команды:
 #rules - правила
@@ -126,6 +149,7 @@ function start(){
 	window.name = ""
 	window.role = ""
 	window.warns = 0
+	window.rep = 0
 	window.mute = false
 	window.readRules = false
 	window.readHelp = false
@@ -136,11 +160,6 @@ function start(){
 
 
 	if(true){
-		let closeBtn = document.getElementById("closeDialogBtn")
-		closeBtn.style.position = "absolute"
-		closeBtn.style.right = "8px"
-		closeBtn.style.top = "10px"
-
 		let nameLine = document.getElementsByClassName("left_block_hc")[0]
 		nameLine.style.overflow  = "hidden"
 		nameLine.style.width 	 = "100%"
@@ -148,6 +167,22 @@ function start(){
 		nameLine.style.wordBreak = "break-all"
 		while(nameLine.firstChild != nameEl)
 			nameLine.firstChild.remove()
+
+		let closeBtn = document.getElementById("closeDialogBtn")
+		closeBtn.style.position = "absolute"
+		closeBtn.style.top = "10px"
+		closeBtn.style.right = "8px"
+		closeBtn.style.width = "48px"
+		closeBtn.innerText = "kick"
+
+		let banBtn = document.createElement("button")
+		banBtn.style.position = "absolute"
+		banBtn.style.top = "10px"
+		banBtn.style.right = "64px"
+		banBtn.style.width = "48px"
+		banBtn.innerText = "ban"
+		banBtn.onclick = () => ipc.send("ban", "self")
+		closeBtn.insertAdjacentElement("beforebegin", banBtn)
 
 		document.querySelector(".container.chat_container").style.marginTop = "0"
 		document.getElementById("chat_box").style.height = ""
@@ -171,7 +206,7 @@ function start(){
 
 		let message = data.message
 		const messageTime = new Date().getTime()
-		const oldWarns = warns
+		// const oldWarns = warns
 
 		// drop sibling
 		if(message == FIRST_MESSAGE){
@@ -180,21 +215,32 @@ function start(){
 		}
 
 		// spam prevention
-		if(messageTime - lastMessageTime < 1000){
-			warns++
-			send("~Сообщение не отправлено: вы слишком часто пишете сообщения")
-		}
-		// if(message == lastMessage){
-		// 	warns++
-		// 	send("~Сообщение не отправлено: ваши сообщения повторяются")
-		// }
+		if(role != "moderator") {
+			const oldRep = rep
+			if(messageTime - lastMessageTime < minPeriod()){
+				warns++
+				rep -= 2
+				send(`~Сообщение не отправлено: вы слишком часто пишете сообщения. Сейчас вы можете писать сообщения раз в ${Math.round(minPeriod()*10)/10000} секунд`)
+			}
 
-		if(warns > oldWarns) {
+			if(message == lastMessage){
+				rep -= 2
+				send("~Сообщение не отправлено, ваши сообщения повторяются.")
+			}
+
+			if(message.length > maxMessage()){
+				rep -= 2
+				send(`~Сообщение не отправлено. Сейчас вам доступно ${maxMessage()} символов на сообщение`)
+			}
+
 			if(warns > 6)
 				ChatEngine.leaveDialog(current_dialog)
-			else
-				send("~Осторожней")
-			return
+
+			if(rep < oldRep){
+				if(rep <= -30)
+					ChatEngine.leaveDialog(current_dialog)
+				return
+			}
 		}
 
 		lastMessageTime = messageTime
@@ -263,7 +309,8 @@ function start(){
 			else if(command == "me") {
 				if(rejectNotInChat()) return
 				if(argsText){
-					resetAfkTimer()
+					addRep()
+					resetAfkTimer(10)
 					toAll(`*${name} ${argsText}*`)
 				}
 				else
@@ -349,12 +396,20 @@ function start(){
 				userState = 0
 				send("~Введите ваше имя")
 			}
-			else
-				send("~Сначала ознакомьтесь c правилами и списком команд.\nДля этого используйте команды #rules и #help")
+			else {
+				warns++
+				if(readRules)
+					send("~Не пишите обычные сообщения пока не попадёте в чат.\nСначала ознакомьтесь cо списком команд.\nДля этого используйте команду #help")
+				else if(readHelp)
+					send("~Не пишите обычные сообщения пока не попадёте в чат.\nСначала ознакомьтесь c правилами.\nДля этого используйте команду #rules")
+				else
+					send("~Не пишите обычные сообщения пока не попадёте в чат.\nСначала ознакомьтесь c правилами и списком команд.\nДля этого используйте команды:\n#rules\n#help")
+			}
 		}
 
 		// name is being set
 		else if(userState == 0){
+			resetAfkTimer(10)
 			const newName = message
 			changeName(newName)
 		}
@@ -366,9 +421,11 @@ function start(){
 
 		// normal message
 		else if(userState == 1){
-			resetAfkTimer()
+			addRep()
+			resetAfkTimer(10)
 			if(warns > 0)
 				warns -= 0.1
+
 			sendMessage(message)
 		}
 
@@ -389,11 +446,12 @@ function start(){
 		name = ""
 		role = ""
 		warns = 0
+		rep = 0
 		mute = false
 		lastMessage = ""
 		readRules = false
 		readHelp = false
-		resetAfkTimer()
+		resetAfkTimer(3)
 
 		if(ipc.sendSync("is-banned", userId)){
 			send(BAN_MESSAGE)
@@ -425,14 +483,14 @@ function start(){
 	log("started")
 }
 
-window.resetAfkTimer = function(){
+window.resetAfkTimer = function(minutes){
 	if(afkTimer)
 		clearTimeout(afkTimer)
 	afkTimer = setTimeout(function(){
 		afkTimer = null
 		if(role != "moderator")
 			ChatEngine.leaveDialog(current_dialog)
-	}, 600000)
+	}, minutes*60000)
 }
 
 window.rejectNotInChat = function(){
